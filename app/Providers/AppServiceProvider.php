@@ -12,32 +12,28 @@ use Illuminate\Database\Events\QueryExecuted;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
-
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        Model::preventLazyLoading(!app()->isProduction());
-        Model::preventSilentlyDiscardingAttributes(!app()->isProduction());
+        Model::shouldBeStrict(!app()->isProduction());
 
-        DB::whenQueryingForLongerThan(500, function (Connection $connection, QueryExecuted $event) {
-            logger()->channel('telegram')->debug('whenQueryingForLongerThan: ' . $connection->query()->toSql());
-        });
+        if (app()->isProduction()) {
 
-        $kernel = app(Kernel::class);
-        $kernel->whenRequestLifecycleIsLongerThan(
-            CarbonInterval::seconds(4),
-            function () {
-                logger()->channel('telegram')->debug('whenRequestLifecycleIsLongerThan: ' . request()->url());
-            }
-        );
+            DB::listen(static function ($query) {
+                if ($query->time > 200) {
+                    logger()->channel('telegram')->debug('Long query: ' . $query->sql, $query->bindings);
+                }
+            });
+
+            app(Kernel::class)->whenRequestLifecycleIsLongerThan(
+                CarbonInterval::seconds(4),
+                static function () {
+                    logger()->channel('telegram')->debug('whenRequestLifecycleIsLongerThan: ' . request()->url());
+                }
+            );
+        }
     }
 }
